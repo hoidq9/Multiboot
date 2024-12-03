@@ -1,0 +1,245 @@
+dejavufont() {
+    cd /usr/share/fonts
+    d_font=$(ls -d */ | grep "dejavu")
+    if [ $d_font != "dejavu/" ]; then
+        sudo mv $d_font dejavu
+    fi
+    cd $HOME/Drive
+}
+
+unifont() {
+    cd /usr/share/fonts
+    if [ -z $(ls -d */ | grep "unifont/") ]; then
+        sudo mkdir -p unifont
+    fi
+    sudo rm -rf /usr/share/fonts/unifont/*
+    latest_version=$(curl https://ftp.gnu.org/gnu/unifont/ | awk -F'<a href="unifont-' '{print $2}' | awk -F'/"' '{print $1}' | sort -V | tail -1)
+    echo -ne "\nGNU_Unifont latest version: $latest_version"
+    cd $HOME/Drive
+    if [ -n "$(grep "Unifont" $HOME/Drive/linux/usb/list)" ]; then
+        current_version=$(grep "Unifont" $HOME/Drive/linux/usb/list | awk '{print $3}')
+        echo -ne "\nGNU_Unifont current version: $current_version"
+    fi
+    echo -ne "\n$BYellow Do you want to download Unifont latest version? [y/n]: "
+    echo -ne "\033[0m"
+    read choice
+    if [ $choice == "y" ] || [ $choice == "yes" ] || [ $choice == "Yes" ]; then
+        sed -i "/Unifont/d" $HOME/Drive/linux/usb/list
+        echo -ne "* GNU_Unifont: $latest_version\n" >>$HOME/Drive/linux/usb/list
+        wget https://ftp.gnu.org/gnu/unifont/unifont-$latest_version/unifont-$latest_version.ttf
+        mv unifont-$latest_version.ttf unifont.ttf
+        sudo mv unifont.ttf /usr/share/fonts/unifont
+    fi
+}
+
+zfs() {
+    declare -a Arrays
+    sudo dnf install -y https://zfsonlinux.org/fedora/zfs-release$(rpm -E %dist).noarch.rpm
+    for url in $(dnf download --urls --disablerepo=\* --enablerepo=zfs \* | grep rpm$); do
+        Arrays+=("$(basename $url | sed -e 's/\([^.]*\).*/\1/' -e 's/\(.*\)-.*/\1/')")
+    done
+    sudo dnf install -y "${Arrays[@]}"
+}
+
+GRUB() {
+    cd $HOME/Drive/Downloads/GRUB
+    latest_version=$(curl https://ftp.gnu.org/gnu/grub/ | awk '{print $6}' | awk -F'="grub-' '{print $2}' | awk -F".tar" '{print $1}' | awk -F"-for" '{print $1}' | sort -V | tail -1)
+    echo -ne "\nGRUB latest version: $latest_version"
+    if [ -n "$(grep "GRUB" $HOME/Drive/linux/usb/list)" ]; then
+        current_version=$(grep "GRUB" $HOME/Drive/linux/usb/list | awk '{print $3}')
+        echo -ne "\nGRUB current version: $current_version"
+    fi
+    echo -ne "\n$BYellow You want to install GRUB? [y/n]: "
+    echo -ne "\033[1;95m"
+    read choice1
+    echo -ne "\033[0m"
+    if [ $choice1 == "y" ] || [ $choice1 == "yes" ] || [ $choice1 == "Yes" ]; then
+        sed -i "/GRUB/d" $HOME/Drive/linux/usb/list
+        echo -ne "* GNU_GRUB: $latest_version\n" >>$HOME/Drive/linux/usb/list
+        sudo rm -rf * $HOME/Drive/grub $HOME/Drive/grub_exec
+        wget ftp://ftp.gnu.org/gnu/gnu-keyring.gpg
+        wget https://ftp.gnu.org/gnu/grub/grub-$latest_version.tar.xz
+        wget https://ftp.gnu.org/gnu/grub/grub-$latest_version.tar.xz.sig
+        gpg --verify --keyring ./gnu-keyring.gpg grub-2.06.tar.xz.sig grub-2.06.tar.xz
+        result0=$?
+        if [ $result0 == 0 ]; then
+            echo -e "\033[1;32m GRUB signature is valid\n"
+            sleep 5
+            echo -ne "\033[0m"
+            tar -xf grub-$latest_version.tar.xz
+            cd grub-$latest_version
+            ./configure --enable-boot-time --enable-cache-stats --enable-device-mapper --enable-grub-emu-pci --enable-grub-emu-sdl --enable-grub-mkfont --enable-grub-mount --enable-grub-themes --enable-largefile --enable-liblzma --enable-libzfs --enable-mm-debug --enable-nls --enable-option-checking --enable-stack-protector --disable-werror --with-platform=efi --prefix=$HOME/Drive/grub --exec-prefix=$HOME/Drive/grub_exec --with-gnu-ld
+            result=$?
+            if [ $result == 0 ]; then
+                sed -i "/grub/d" $HOME/Drive/linux/usb/sbat.csv
+                echo -ne "grub,1,Free Software Foundation,grub,$latest_version,https://www.gnu.org/software/grub/" >>$HOME/Drive/linux/usb/sbat.csv
+                make && make install
+                result1=$?
+                if [ $result1 == 0 ]; then
+                    sudo rm -rf /mnt/*
+                    sudo mount /dev/$disk'1' /mnt
+                    sudo rm -rf /mnt/*
+                    sudo mkdir -p /mnt/EFI/BOOT
+                    cd $HOME/Drive/grub_exec/sbin
+                    sudo ./grub-install --removable --directory=$HOME/Drive/grub_exec/lib/grub/x86_64-efi --locale-directory=$HOME/Drive/grub/share/locale --target=x86_64-efi --boot-directory=/mnt/EFI/BOOT --efi-director=/mnt --bootloader-id=grub2 --modules="tpm" --sbat=$HOME/Drive/linux/usb/sbat.csv /dev/$disk'1'
+                fi
+            fi
+        fi
+    fi
+}
+
+install g++ make bison gettext-devel binutils flex pkg-config shim grub2-tools grub2-efi glibc freetype-devel SDL libpciaccess libusb autoconf automake xorriso device-mapper-devel xz-devel util-linux cairo fuse dosfstools e2fsprogs xfsprogs gzip cpio gawk parted efi-filesystem fuse-devel tar kernel-devel-$(uname -r) powershell sbsigntools -y
+
+fedora_checksums() {
+    fedora_checksum=$(curl https://ftp.iij.ad.jp/pub/linux/Fedora/fedora/linux/releases/$latest_version/Everything/x86_64/iso/ | grep "<a href" | awk -F 'href="' '{print $2}' | awk -F'">' '{print $1}' | grep ".CHECKSUM$")
+    checksum=$(curl https://ftp.iij.ad.jp/pub/linux/Fedora/fedora/linux/releases/$latest_version/Everything/x86_64/iso/$fedora_checksum | grep "SHA256" | awk '{print $4}' | awk 'NF')
+    cd $HOME/Drive/Downloads/Fedora
+    if grep -q "OK" <<<'$(echo "$checksum *$fedora_editions" | sha256sum --check)'; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+fedora_boolean() {
+    if [ $? = 0 ]; then
+        return 0
+    else
+        fedora_url
+        fedora_checksums
+        fedora_boolean
+    fi
+}
+
+
+
+echo -e "\nList disks:"
+lsblk | awk '{print "\033[1;91m"$1" ""\033[1;32m"$4"\033[0m"}' | column -t
+echo -ne "\nThe disk want to configure: "
+echo -ne "\033[1;35m"
+read disk
+echo -e "\033[0m"
+echo -ne "\nYou want to format the disk? [y/n]: "
+echo -ne "\033[1;36m"
+read choice
+echo -e "\033[0m"
+
+partition() {
+    part_number=$(lsblk | grep $disk | wc -l)
+    for ((i = 1; i <= $part_number - 1; i++)); do
+        sudo umount /dev/$disk$i
+    done
+    sudo dd if=/dev/zero of=/dev/$disk bs=1k count=2048
+    sudo parted /dev/$disk mklabel msdos
+
+    part_first() {
+        sudo parted /dev/$disk mkpart p fat32 0% $capacity'M'
+        sudo mkfs -t fat -n "EFI" /dev/$disk'1'
+    }
+    echo -ne '\033[1;32m Set partition 1\n'
+    part_first
+
+    part_second() {
+        sudo parted /dev/$disk mkpart p fat32 $capacity'M' 100%
+        sudo mkfs -t exfat -n "OS" /dev/$disk'2'
+    }
+    echo -ne "\nSet partition 2\n"
+    part_second
+    echo -e "\033[0m"
+}
+
+if [ $choice = "y" ] || [ $choice = "yes" ] || [ $choice = "Yes" ]; then
+    echo -ne "\nCapacity of the disk 1 (MB): "
+    echo -ne "\033[1;34m"
+    read capacity
+    echo -e "\033[0m"
+    partition
+fi
+
+
+
+
+#!/bin/sh
+REPO_DIR="$(dirname "$(readlink -m "${0}")")"
+sudo find $REPO_DIR -type f -print0 | sudo xargs -0 dos2unix -- &>/dev/null
+sudo chmod -R 777 $REPO_DIR
+sudo chown -R $USER:$USER $REPO_DIR
+
+software() {
+	sudo dnf upgrade -y
+	sudo dnf install ntfs-3g ntfsprogs git -y
+}
+
+force() {
+	software
+}
+
+partition() {
+	part_number=$(lsblk | grep $disk | wc -l)
+	for ((i = 1; i <= $part_number - 1; i++)); do
+		sudo umount /dev/$disk$i
+	done
+	sudo dd if=/dev/zero of=/dev/$disk bs=1k count=2048
+	sudo parted /dev/$disk mklabel msdos
+
+	part_first() {
+		sudo parted /dev/$disk mkpart p fat32 0% 600M
+		sudo mkfs -t fat -n "EFI_H" /dev/$disk'1'
+		sudo parted /dev/$disk set 1 esp on
+	}
+	part_first
+
+	part_second() {
+		sudo parted /dev/$disk mkpart p fat32 600M 12.9G
+		sudo mkfs.ntfs -Q -f -L "WINDOWS" /dev/$disk'2'
+	}
+	part_second
+
+	part_third() {
+		sudo parted /dev/$disk mkpart p fat32 12.9G 100%
+		yes | sudo mkfs.ext4 -L "RHEL" /dev/$disk'3'
+	}
+	part_third
+}
+
+echo -e "\nList disks:"
+lsblk -do name,vendor,model,size
+echo -ne "\nThe disk want to install: "
+echo -ne "\033[1;35m"
+read disk
+echo -e "\033[0m"
+echo -ne "\nYou want to format the disk? [All DATA be lost] [y/n]: "
+echo -ne "\033[1;36m"
+read choice
+echo -e "\033[0m"
+
+main() {
+	if [ $choice = "y" ] || [ $choice = "yes" ] || [ $choice = "Yes" ] || [ $choice = "Y" ]; then
+		force
+		partition
+	fi
+
+	mount_part() {
+		sudo umount /dev/$disk'1'
+		sudo mount /dev/$disk'1' /mnt
+		sudo rm -rf /mnt/*
+	}
+	mount_part
+
+	cd $REPO_DIR/bootloader
+	sudo cp -r * /mnt/
+	git clone https://github.com/hoidq0/rhel_configure.git
+	sudo rsync -r rhel_configure/ /mnt/rhel_configure/
+	sudo rm -rf rhel_configure
+	sudo umount /dev/$disk'1'
+}
+
+main &>$REPO_DIR/bootusb.log
+
+if [ $? -ne 0 ]; then
+	echo -ne "\nError occurred while running the script!"
+	exit 1
+fi
+
+sudo rm -rf $REPO_DIR/bootusb.log
+echo -ne "\nDone!"

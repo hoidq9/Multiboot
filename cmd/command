@@ -1,0 +1,65 @@
+* uefi: 
+	sudo efibootmgr -b 3(thu tu trong danh sach boot) -B
+	efi-readvar -v dbx -o dbx.esl\
+	cert-to-efi-sig-list -g "$myuuid" PK.pem  PK.esl\
+	cert-to-efi-sig-list -g "$myuuid" KEK.pem KEK.esl\
+	cert-to-efi-sig-list -g "$myuuid" db.pem  db.esl\
+	sign-efi-sig-list -g "$myuuid" -c PK.pem  -k PK.key  PK  PK.esl  PK.auth\
+	sign-efi-sig-list -g "$myuuid" -c PK.pem  -k PK.key  KEK KEK.esl KEK.auth\
+	sign-efi-sig-list -g "$myuuid" -c KEK.pem -k KEK.key db  db.esl  db.auth\
+	sign-efi-sig-list -g "$myuuid" -c KEK.pem -k KEK.key dbx dbx.esl dbx.auth
+	efi-updatevar -k PK.key  -g "$myuuid" -f PK.auth  PK
+	efi-updatevar -a -k PK.key  -g "$myuuid" -c KEK.crt KEK
+	efi-updatevar -a -k KEK.key -g "$myuuid" -c DB.crt db		
+	grub2-glue-efi
+
+* mokutil:
+	mokutil --list-enrolled
+	mokutil --export
+	mokutil --sb-state
+	mokutil --delete MOK-0002.der
+	mokutil --delete-hash
+	mokutil --delete-hash 47b31a1c7867644b2ee8093b2d5fbe21e21f77c1617a2c08812f57ace0850e9f 9bf51face267e0676e65ac82bf61bab763ccc0e9d649eac18b1111a23687fca3
+
+* install grub:
+	+) ./bootstrap
+	+) ./configure --enable-boot-time --enable-cache-stats --enable-dependency-tracking --enable-device-mapper --disable-efiemu --enable-grub-emu-pci --enable-grub-mkfont --enable-grub-mount --enable-grub-themes --enable-largefile  --enable-liblzma --enable-libzfs --enable-mm-debug --enable-nls --enable-option-checking --enable-rpath --enable-silent-rules --enable-stack-protector --enable-threads --enable-threads --disable-werror --enable-grub-emu-sdl --with-platform=efi --prefix=$HOME/Drive/grub --exec-prefix=$HOME/Drive/grub_exec --enable-build-id --enable-cross-guesses --enable-rpm-sort --enable-wextra --with-gnu-ld --with-debug-timestamps
+
+./configure --enable-boot-time --enable-cache-stats --enable-dependency-tracking --enable-device-mapper --disable-efiemu --disable-grub-emu-pci --enable-grub-mkfont --enable-grub-mount --enable-grub-themes --enable-largefile  --enable-liblzma --enable-libzfs --enable-mm-debug --enable-nls --disable-option-checking --disable-rpath --disable-silent-rules --enable-stack-protector --disable-threads --disable-threads --disable-werror --disable-grub-emu-sdl --with-platform=efi --prefix=$HOME/Drive/grub --exec-prefix=$HOME/Drive/grub_exec --disable-build-id --disable-cross-guesses --enable-rpm-sort --disable-wextra --with-gnu-ld --with-debug-timestamps 
+
+
+
+	+) make && make install 
+	+) /home/hoi/Drive/grub_exec/sbin/grub-install --removable --directory=/home/hoi/Drive/grub_exec/lib/grub/x86_64-efi --locale-directory=/home/hoi/Drive/grub/share/locale --target=x86_64-efi --boot-directory=/run/media/hoi/ESP_USB/EFI/BOOT --efi-director=/run/media/hoi/ESP_USB --bootloader-id=grub2 --modules="tpm" --sbat=/home/hoi/Drive/code/usb/sbat.csv /dev/sda1
+	+) mv BOOTX64.EFI grubx64.efi
+	+) sudo cp /boot/efi/EFI/fedora/mmx64.efi /run/media/hoi/ESP_USB/EFI/BOOT/
+	+) sudo cp /boot/efi/EFI/fedora/shimx64.efi /run/media/hoi/ESP_USB/EFI/BOOT/BOOTX64.EFI
+	+) openssl req -newkey rsa:4096 -nodes -keyout MOK.key -new -x509 -sha256 -days 3650 -subj "/CN=Dao Quoc Hoi/" -out MOK.crt
+	+) openssl x509 -outform DER -in MOK.crt -out MOK.cer
+	+) sbsign --key MOK.key --cert MOK.crt --output /run/media/hoi/ESP_USB/EFI/BOOT/grubx64.efi /run/media/hoi/ESP_USB/EFI/BOOT/grubx64.efi
+	+) sbverify --list grubx64.efi
+	+) objdump -j .sbat -s grubx64.efi
+	+) sbsign --key MOK.key --cert MOK.crt --output /run/media/hoi/CLR_ISO/kernel/kernel.xz /run/media/hoi/CLR_ISO/kernel/kernel.xz
+	+) sbverify --list kernel.xz
+	+) grub2-mkimage -d /usr/lib/grub/x86_64-efi -c '($pwd)/multiboot/cmd/config.cfg' -o grubx64.efi -O x86_64-efi -p '' -s '($pwd)/multiboot/cmd/sbat.csv' 'chain' 'datetime' 'priority_queue' 'affs' 'afs' 'bfs' 'btrfs' 'cbfs' 'cpio' 'cpio_be' 'iso9660' 'minix' 'minix2' 'minix2_be' 'minix3' 'minix3_be' 'minix_be' 'newc' 'nilfs2' 'odc' 'procfs' 'reiserfs' 'romfs' 'sfs' 'squash4' 'lzopio' 'xzio' 'tar' 'archelp' 'udf' 'ufs1' 'ufs1_be' 'ufs2' 'probe' 'regexp' 'jfs' 'xfs' 'zfs' 'hfs' 'echo' 'minicmd' 'configfile' 'gfxterm_background' 'video_colors' 'bitmap_scale' 'png' 'bitmap' 'gfxterm' 'all_video' 'video_cirrus' 'video_bochs' 'efi_uga' 'efi_gop' 'video_fb' 'font' 'video' 'loadenv' 'disk' 'test' 'normal' 'gzio' 'bufio' 'gettext' 'terminal' 'crypto' 'extcmd' 'boot' 'search_fs_file' 'hfsplus' 'ntfs' 'fat' 'exfat' 'ext2' 'fshelp' 'part_msdos' 'part_gpt' 'cat' 'efifwsetup' 'efinet' 'gfxmenu' 'halt' 'jpeg' 'keystatus' 'loopback' 'linux' 'lsefi' 'lsefimmap' 'lsefisystab' 'lssal' 'memdisk' 'part_apple' 'password_pbkdf2' 'reboot' 'search' 'search_fs_uuid' 'search_label' 'sleep' 'true' 'zfscrypt' 'zfsinfo' 'ls' 'read' 'all_video' 'bsd' 'ntfscomp'
+
+* reduce iso windows:
+	wimlib-imagex optimize install.wim --threads=4 --solid
+
+* checksum:
+	echo "d52d74970bc2c7d46a5e92c841951e96febb2aa8952e9259ea75cf1212f24a0a *Fedora-Everything-netinst-x86_64-35-1.2.iso" | sha256sum --check
+	gpg --verify grub-2.06.tar.xz.sig grub-2.06.tar.xz
+
+osirrox -indev rhel-baseos-9.0-x86_64-boot.iso \
+        -extract_boot_images ./ \
+		-extract /EFI/BOOT/BOOTX64.EFI BOOTX64.EFI \
+        -extract /images/pxeboot/vmlinuz vmlinuz 
+sbsign vmlinuz 
+mcopy -D oO -i eltorito_img2_uefi.img BOOTX64.EFI ::/EFI/BOOT/
+xorriso -indev rhel-baseos-9.0-x86_64-boot.iso \
+        -outdev rhel-baseos-9.0-x86_64-boot-sb.iso \
+        -boot_image any replay \
+        -append_partition 2 0xef eltorito_img2_uefi.img \
+        -map BOOTX64.EFI /EFI/BOOT/BOOTX64.EFI \
+        -map vmlinuz /images/pxeboot/vmlinuz
+

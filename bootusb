@@ -1,0 +1,73 @@
+#!/bin/sh
+REPO_DIR="$(dirname "$(readlink -m "${0}")")"
+sudo find $REPO_DIR -type f -print0 | sudo xargs -0 dos2unix -- &>/dev/null
+sudo chmod -R 777 $REPO_DIR
+sudo chown -R $USER:$USER $REPO_DIR
+
+software() {
+	sudo dnf upgrade -y
+	sudo dnf install exfatprogs git -y
+}
+
+partition() {
+	part_number=$(lsblk | grep $disk | wc -l)
+	for ((i = 1; i <= $part_number - 1; i++)); do
+		sudo umount /dev/$disk$i
+	done
+	sudo dd if=/dev/zero of=/dev/$disk bs=1k count=2048
+	sudo parted /dev/$disk mklabel msdos
+
+	part_first() {
+		sudo parted /dev/$disk mkpart p fat32 0% 600M
+		sudo mkfs -t fat -n "EFI_H" /dev/$disk'1'
+		sudo parted /dev/$disk set 1 esp on
+	}
+	part_first
+
+	part_second() {
+		sudo parted /dev/$disk mkpart p fat32 600M 100%
+		sudo mkfs.exfat -L "OS" /dev/$disk'2'
+	}
+	part_second
+}
+
+echo -e "\nList disks:"
+lsblk -do name,vendor,model,size
+echo -ne "\nThe disk want to install: "
+echo -ne "\033[1;35m"
+read disk
+echo -e "\033[0m"
+echo -ne "\nYou want to format the disk? [All DATA be lost] [y/n]: "
+echo -ne "\033[1;36m"
+read choice
+echo -e "\033[0m"
+
+main() {
+	if [ $choice = "y" ] || [ $choice = "yes" ] || [ $choice = "Yes" ] || [ $choice = "Y" ]; then
+		software
+		partition
+	fi
+
+	mount_part() {
+		sudo umount /dev/$disk'1'
+		sudo mount /dev/$disk'1' /mnt
+		sudo rm -rf /mnt/*
+	}
+	mount_part
+
+	cd $REPO_DIR/bootloader
+	sudo cp -r * /mnt/
+	sudo sed -i '/:$isoname[arf]/s/hd:\/dev\/H9/hd:\/dev\/'"$disk"'2/' /mnt/Boot/grub/grub.cfg
+	sudo rm -rf rhel_setup
+	sudo umount /dev/$disk'1'
+}
+
+main &>$REPO_DIR/bootusb.log
+
+if [ $? -ne 0 ]; then
+	echo -ne "\nError occurred while running the script!"
+	exit 1
+fi
+
+sudo rm -rf $REPO_DIR/bootusb.log
+echo -ne "\nDone!"

@@ -1,0 +1,82 @@
+#!/bin/sh
+
+# partition() {
+#     part_number=$(lsblk | grep $disk | wc -l)
+#     for ((i = 1; i <= $part_number - 1; i++)); do
+#         sudo umount /dev/$disk$i
+#     done
+#     sudo dd if=/dev/zero of=/dev/$disk bs=1k count=2048
+#     sudo parted /dev/$disk mklabel gpt
+    
+#     part_first() {
+#         sudo parted /dev/$disk mkpart ESP 0% 600M
+#         sudo mkfs -t fat -n "EFI_H" /dev/$disk'1'
+#         sudo parted /dev/$disk set 1 esp on
+#         sudo parted /dev/$disk set 1 hidden on
+#     }
+#     part_first
+
+#     part_second() {
+#         sudo parted /dev/$disk mkpart Windows 600M 61%
+#         sudo mkfs.ntfs -Q -f -L "WINDOWS" /dev/$disk'2'
+#         sudo parted /dev/$disk set 2 msftdata on
+#     }
+#     part_second
+
+#     part_third() {
+#         sudo parted /dev/$disk mkpart Linux 61% 100%
+#         yes | sudo mkfs.ext4 -L "CLR_ISO" /dev/$disk'3'
+#     }
+#     part_third
+# }
+
+mkdir -p $(pwd)/USB $(pwd)/OS_USB
+sudo mount -L OS_USB $(pwd)/USB 
+
+echo -ne "Number of the ISO file: "
+read number
+RED='\033[0;31m'
+NC='\033[0m'
+
+creiso() {
+    cp -v $path $(pwd)/OS_USB
+    sudo rm -rf $(pwd)/USB/$1*.iso
+    iso=$(ls $(pwd)/OS_USB/$1*.iso)
+    cd $(pwd)/OS_USB
+    osirrox -indev $iso -extract_boot_images ./ -extract /images/pxeboot/vmlinuz vmlinuz
+    chmod +rwx vmlinuz
+    cd ..
+    $(pwd)/sb_tools/sbsign --key $(pwd)/ssl/sb.key --cert $(pwd)/ssl/sb.crt --output $(pwd)/OS_USB/vmlinuz $(pwd)/OS_USB/vmlinuz
+    cd $(pwd)/OS_USB
+    xorriso -indev $iso -outdev $iso -boot_image any replay -append_partition 2 0xef eltorito_img2_uefi.img -map $(pwd)/vmlinuz /images/pxeboot/vmlinuz
+    cd ..
+}
+
+for ((i = 1; i <= $number; i++)); do
+    echo -ne "\n${RED}Path of the ISO file $i (Support ISO Linux): "
+    read path
+    echo -e ${NC}
+    path_iso=$(basename $path)
+    echo $path_iso >$(pwd)/OS_USB/iso.txt
+
+    rmOS_USB() {
+        find $(pwd)/OS_USB/. ! -name 'iso.txt' ! -name '.' ! -name '..' -type f,d -exec rm -rf {} +
+    }
+
+    if grep -q "rhel" $(pwd)/OS_USB/iso.txt; then
+        rmOS_USB
+        creiso rhel 
+        sudo cp $(pwd)/OS_USB/rhel*.iso $(pwd)/USB
+    fi
+
+    if grep -q "Fedora" $(pwd)/OS_USB/iso.txt; then
+        rmOS_USB
+        creiso Fedora 
+        sudo cp $(pwd)/OS_USB/Fedora*.iso $(pwd)/USB
+    fi
+
+done
+
+sudo umount -lf $(pwd)/USB
+rm -rf $(pwd)/USB $(pwd)/OS_USB
+echo -ne "\nDone! Press any key to exit..." && read -n 1
